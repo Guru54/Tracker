@@ -80,37 +80,13 @@ router.put('/:id', validateId(), async (req, res) => {
   }
 });
 
-// Update question content: problem statement + multiple approaches + notes.
-// Each approach is its own {title, intuition, explanation, code,
-// timeComplexity, spaceComplexity} — replacing the old single flat
-// approach/code/complexity shape, which had no room for a second approach
-// and would silently drop any field it didn't explicitly list.
+// Update question content (approach, code, etc.)
 router.put('/:id/content', validateId(), async (req, res) => {
   try {
-    const { problemStatement, approaches, notes } = req.body;
-
-    if (approaches !== undefined && !Array.isArray(approaches)) {
-      return res.status(400).json({ error: 'approaches must be an array' });
-    }
-
-    const sanitizedApproaches = Array.isArray(approaches)
-      ? approaches.map(a => ({
-          title: a?.title || '',
-          intuition: a?.intuition || '',
-          explanation: a?.explanation || '',
-          code: a?.code || '',
-          timeComplexity: a?.timeComplexity || '',
-          spaceComplexity: a?.spaceComplexity || ''
-        }))
-      : undefined;
-
-    const update = { notes };
-    if (problemStatement !== undefined) update.problemStatement = problemStatement;
-    if (sanitizedApproaches !== undefined) update.approaches = sanitizedApproaches;
-
+    const { approach, code, complexity, notes } = req.body;
     const question = await Question.findByIdAndUpdate(
       req.params.id,
-      update,
+      { approach, code, complexity, notes },
       { new: true }
     );
     if (!question) return res.status(404).json({ error: 'Question not found' });

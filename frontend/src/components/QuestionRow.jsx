@@ -31,9 +31,15 @@ const QuestionRow = ({ question, index, onStatusChange, onDelete }) => {
     }
   };
 
+  // FIX #1: previously this collapsed straight to 'Not Started' on uncheck,
+  // silently wiping out 'In Progress' / 'Revisit' state. Now it remembers
+  // what the status was before marking Done, and restores it on uncheck.
   const handleStatusToggle = () => {
-    const newStatus = question.status === 'Done' ? 'Not Started' : 'Done';
-    onStatusChange(newStatus);
+    if (question.status === 'Done') {
+      onStatusChange(question.previousStatus || 'Not Started');
+    } else {
+      onStatusChange('Done', question.status); // pass current status so caller can remember it
+    }
   };
 
   const handlePDF = async (e) => {
@@ -42,56 +48,71 @@ const QuestionRow = ({ question, index, onStatusChange, onDelete }) => {
   };
 
   return (
+    // FIX #2: switched from flex to the same grid template as the Accordion's
+    // table header (checkbox, index, title, difficulty, platform, status, actions)
+    // so columns actually line up instead of only approximately matching via flex widths.
     <div 
-      className="question-row group"
+      className="question-row group grid grid-cols-[28px_24px_1fr_80px_96px_96px_110px] gap-3 items-center px-4 py-3 hover:bg-dark-800/50 cursor-pointer transition-all border-b border-dark-700/30"
       onClick={() => navigate(`/question/${question._id}`)}
     >
       {/* Checkbox */}
-      <div onClick={e => e.stopPropagation()}>
+      <div onClick={e => e.stopPropagation()} className="flex items-center justify-center">
         <input
           type="checkbox"
           checked={question.status === 'Done'}
           onChange={handleStatusToggle}
-          className="checkbox-custom"
+          className="checkbox-custom cursor-pointer"
         />
       </div>
 
       {/* Index */}
-      <span className="text-dark-500 text-sm w-6 text-center font-mono">
+      <span className="text-dark-500 text-xs text-center font-mono flex-shrink-0">
         {index}
       </span>
 
       {/* Title */}
-      <div className="flex-1 min-w-0">
+      <div className="min-w-0 pr-2">
         <h4 className={`text-sm font-medium truncate ${
-          question.status === 'Done' ? 'text-dark-500 line-through' : 'text-white'
-        }`}>
+          question.status === 'Done' ? 'text-dark-400 line-through' : 'text-white'
+        }`} title={question.title}>
           {question.title}
         </h4>
       </div>
 
-      {/* Difficulty - Glassmorphism Pill */}
-      <span className={`px-2.5 py-1 rounded-full text-xs font-medium hidden sm:inline ${getDifficultyClass(question.difficulty)}`}>
+      {/* Difficulty */}
+      <span className={`py-1 rounded-full text-xs font-semibold text-center items-center justify-center flex-shrink-0 hidden sm:flex ${getDifficultyClass(question.difficulty)}`}>
         {question.difficulty}
       </span>
 
-      {/* Platform */}
-      <span className="text-xs text-dark-500 hidden md:inline">
-        {question.platform}
-      </span>
+      {/* Platform / LeetCode Tag - Clickable Link */}
+      {question.link ? (
+        <a
+          href={question.link}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="py-1 rounded-full text-xs font-semibold bg-dark-800 hover:bg-dark-700 text-dark-300 hover:text-primary-400 border border-dark-700/60 hover:border-primary-500/50 text-center items-center justify-center gap-1 flex-shrink-0 hidden md:flex transition-all cursor-pointer shadow-sm"
+          title={`Open problem on ${question.platform || 'LeetCode'}`}
+        >
+          <span className="truncate">{question.platform || 'LeetCode'}</span>
+          <ExternalLink className="w-3 h-3 flex-shrink-0 opacity-70" />
+        </a>
+      ) : (
+        <span className="py-1 rounded-full text-xs font-semibold bg-dark-800/80 text-dark-400 border border-dark-700/40 text-center items-center justify-center flex-shrink-0 hidden md:flex">
+          <span className="truncate">{question.platform || 'Manual'}</span>
+        </span>
+      )}
 
       {/* Status Badge */}
-      <span className={`text-xs px-2.5 py-1 rounded-full border hidden lg:inline ${getStatusColor(question.status)}`}>
+      <span className={`py-1 rounded-full text-xs font-semibold border text-center items-center justify-center flex-shrink-0 hidden lg:flex ${getStatusColor(question.status)}`}>
         {question.status}
       </span>
 
-      {/* Content indicator */}
-      {(question.approaches && question.approaches.length > 0) && (
-        <span className="w-2 h-2 bg-primary-500 rounded-full shadow-lg shadow-primary-500/50" title="Has content" />
-      )}
-
-      {/* Actions */}
-      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+      {/* Actions column: content-indicator dot + action icons */}
+      <div className="flex items-center justify-end gap-1 opacity-80 group-hover:opacity-100 transition-opacity flex-shrink-0">
+        {(question.approach || question.code) && (
+          <span className="w-2 h-2 bg-primary-500 rounded-full shadow-lg shadow-primary-500/50 flex-shrink-0" title="Has written approach or code" />
+        )}
         {question.link && (
           <a
             href={question.link}
@@ -100,7 +121,7 @@ const QuestionRow = ({ question, index, onStatusChange, onDelete }) => {
             onClick={e => e.stopPropagation()}
             className="p-1.5 text-dark-400 hover:text-primary-400 hover:bg-primary-500/10 
                      rounded-lg transition-all"
-            title="Open Link"
+            title="Open External Link"
           >
             <ExternalLink className="w-3.5 h-3.5" />
           </a>

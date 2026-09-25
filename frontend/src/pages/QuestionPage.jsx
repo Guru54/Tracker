@@ -3,12 +3,11 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, Edit3, Save, X, Sparkles, FileDown, 
   CheckCircle, Clock, AlertCircle, Loader2, Brain, RefreshCw,
-  ChevronDown, ChevronUp
+  Copy, Check, ExternalLink, Code2, BookOpen, Layers, Terminal, Send
 } from 'lucide-react';
 import ParserModal from '../components/ParserModal';
 import { getQuestion, updateQuestion, updateQuestionContent, getQuestionProgress, recallResult } from '../utils/api';
 import { generateQuestionPDF } from '../utils/pdfGenerator';
-import { emptyApproach } from '../utils/parser';
 
 const QuestionPage = () => {
   const { questionId } = useParams();
@@ -20,28 +19,20 @@ const QuestionPage = () => {
   const [loadError, setLoadError] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [showParser, setShowParser] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
+  
   const [editData, setEditData] = useState({
-    problemStatement: '',
-    approaches: [],
+    approach: '',
+    code: '',
+    complexity: { time: '', space: '' },
     notes: ''
   });
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
 
-  // Which content sections are expanded. All open by default; user folds
-  // away whatever they're not focused on. While editing, a section stays
-  // open regardless of this state so nothing gets hidden mid-edit. Each
-  // approach card gets its own key ('approach-0', 'approach-1', ...) so
-  // they can be folded independently.
-  const [openSections, setOpenSections] = useState({
-    problemStatement: true,
-    notes: true
-  });
-  const toggleSection = (key) => setOpenSections(prev => ({ ...prev, [key]: !prev[key] }));
-  const isOpen = (key) => openSections[key] !== false; // approach cards default open even before their key exists
-
-  // Test Recall state
-  const [recallMode, setRecallMode] = useState(null); // null | 'testing' | 'revealed'
+  // Test Recall Slide-Over State
+  const [showRecallDrawer, setShowRecallDrawer] = useState(false);
+  const [recallMode, setRecallMode] = useState('testing'); // 'testing' | 'revealed'
   const [scratch, setScratch] = useState('');
   const [recallSaving, setRecallSaving] = useState(false);
 
@@ -56,13 +47,11 @@ const QuestionPage = () => {
       const { data } = await getQuestion(questionId);
       setQuestion(data);
       setEditData({
-        problemStatement: data.problemStatement || '',
-        approaches: (data.approaches && data.approaches.length) ? data.approaches : [],
+        approach: data.approach || '',
+        code: data.code || '',
+        complexity: data.complexity || { time: '', space: '' },
         notes: data.notes || ''
       });
-      // Progress fetch is best-effort and separate from the question fetch —
-      // a question with no revision history yet is a normal state (returns null),
-      // not an error, so it's handled on its own rather than failing the whole page.
       try {
         const { data: prog } = await getQuestionProgress(questionId);
         setProgress(prog);
@@ -71,7 +60,7 @@ const QuestionPage = () => {
       }
     } catch (err) {
       console.error('Error fetching question:', err);
-      setLoadError('Question load nahi ho paya. Backend down ho sakta hai ya connection issue — dobara try karo.');
+      setLoadError('Question load nahi ho paya. Backend down ho sakta hai ya connection issue.');
     } finally {
       setLoading(false);
     }
@@ -86,7 +75,7 @@ const QuestionPage = () => {
       setIsEditing(false);
     } catch (err) {
       console.error('Error saving:', err);
-      setSaveError('Save nahi ho paya — connection check karo aur dobara try karo. Tumhara content abhi bhi editor mein hai, khoya nahi hai.');
+      setSaveError('Save nahi ho paya — connection check karke dobara try karo.');
     } finally {
       setSaving(false);
     }
@@ -98,12 +87,10 @@ const QuestionPage = () => {
       setQuestion(updated);
       setSaveError('');
       if (newStatus === 'Done') {
-        // Marking Done kicks off the revision schedule server-side — refresh
-        // so the Due/Level badge reflects it immediately.
         try {
           const { data: prog } = await getQuestionProgress(questionId);
           setProgress(prog);
-        } catch { /* non-fatal — badge will just stay as-is until next load */ }
+        } catch { /* non-fatal */ }
       }
     } catch (err) {
       console.error('Error updating status:', err);
@@ -111,9 +98,17 @@ const QuestionPage = () => {
     }
   };
 
+  const handleCopyCode = () => {
+    if (!question?.code) return;
+    navigator.clipboard.writeText(question.code);
+    setCopiedCode(true);
+    setTimeout(() => setCopiedCode(false), 2000);
+  };
+
   function startRecall() {
     setScratch('');
     setRecallMode('testing');
+    setShowRecallDrawer(true);
   }
 
   async function submitRecall(passed) {
@@ -122,35 +117,36 @@ const QuestionPage = () => {
       const { data: updated } = await recallResult(questionId, passed);
       setProgress(updated);
       setSaveError('');
+      setShowRecallDrawer(false);
     } catch (err) {
       console.error('Error saving recall result:', err);
       setSaveError('Recall result save nahi hua — connection check karke dobara try karo.');
     } finally {
       setRecallSaving(false);
-      setRecallMode(null);
       setScratch('');
     }
   }
 
   function revisionBadge() {
-    if (!progress) return { text: 'Not in revision cycle', cls: 'text-dark-500' };
+    if (!progress) return { text: 'Not in revision cycle', cls: 'text-dark-500', passCount: 0 };
     const passCount = (progress.revisionDates || []).filter(r => r.grade === 'pass').length;
     const isDue = progress.nextRevision && new Date(progress.nextRevision) <= new Date();
-    if (isDue) return { text: 'DUE for revision', cls: 'text-amber-400' };
+    if (isDue) return { text: 'DUE for revision', cls: 'text-amber-400 font-bold', passCount };
     return {
-      text: `Level ${Math.min(passCount, 4)}/4 · next: ${new Date(progress.nextRevision).toLocaleDateString()}`,
-      cls: 'text-emerald-400'
+      text: `Level ${Math.min(passCount, 4)}/4 · Next: ${new Date(progress.nextRevision).toLocaleDateString()}`,
+      cls: 'text-emerald-400 font-medium',
+      passCount
     };
   }
 
   const handleParsedSave = async (data) => {
     const payload = {
-      problemStatement: data.problemStatement || editData.problemStatement,
-      // If the AI response had no approaches, keep whatever was already
-      // there rather than wiping existing approaches out.
-      approaches: (data.approaches && data.approaches.length) ? data.approaches : editData.approaches,
-      // Key Points from the AI response become notes; don't clobber existing
-      // manual notes if the AI response didn't include any.
+      approach: data.approach || editData.approach,
+      code: data.code || editData.code,
+      complexity: {
+        time: data.complexity?.time || editData.complexity.time,
+        space: data.complexity?.space || editData.complexity.space
+      },
       notes: data.notes || editData.notes
     };
 
@@ -159,32 +155,17 @@ const QuestionPage = () => {
       setQuestion(saved);
       setSaveError('');
       setEditData({
-        problemStatement: saved.problemStatement || '',
-        approaches: saved.approaches || [],
+        approach: saved.approach || '',
+        code: saved.code || '',
+        complexity: saved.complexity || { time: '', space: '' },
         notes: saved.notes || ''
       });
     } catch (err) {
       console.error('Error saving generated content:', err);
-      setSaveError('Generated content save nahi ho paya — connection check karke dobara try karo. (Content is uparwale editor mein hai, "Save" dabao dobara.)');
-      // Still surface the parsed content in the editor so nothing is lost —
-      // the user can hit Save manually once the connection issue is sorted.
+      setSaveError('Generated content save nahi ho paya — connection check karke dobara try karo.');
       setEditData(payload);
       setIsEditing(true);
     }
-  };
-
-  // Add/remove/update helpers for the approaches list while editing.
-  const addApproach = () => {
-    setEditData(prev => ({ ...prev, approaches: [...prev.approaches, emptyApproach()] }));
-  };
-  const removeApproach = (index) => {
-    setEditData(prev => ({ ...prev, approaches: prev.approaches.filter((_, i) => i !== index) }));
-  };
-  const updateApproach = (index, field, value) => {
-    setEditData(prev => ({
-      ...prev,
-      approaches: prev.approaches.map((a, i) => i === index ? { ...a, [field]: value } : a)
-    }));
   };
 
   const handleDownloadPDF = async () => {
@@ -193,40 +174,41 @@ const QuestionPage = () => {
 
   const getDifficultyClass = (diff) => {
     switch (diff) {
-      case 'Easy': return 'difficulty-easy';
-      case 'Medium': return 'difficulty-medium';
-      case 'Hard': return 'difficulty-hard';
-      default: return 'difficulty-medium';
+      case 'Easy': return 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3 py-1 rounded-full text-xs font-semibold';
+      case 'Medium': return 'bg-amber-500/10 text-amber-400 border border-amber-500/20 px-3 py-1 rounded-full text-xs font-semibold';
+      case 'Hard': return 'bg-rose-500/10 text-rose-400 border border-rose-500/20 px-3 py-1 rounded-full text-xs font-semibold';
+      default: return 'bg-dark-700/50 text-dark-400 px-3 py-1 rounded-full text-xs font-semibold';
     }
   };
 
   const getStatusIcon = (status) => {
     switch (status) {
-      case 'Done': return <CheckCircle className="w-4 h-4 text-success" />;
-      case 'In Progress': return <Clock className="w-4 h-4 text-warning" />;
-      case 'Revisit': return <AlertCircle className="w-4 h-4 text-danger" />;
+      case 'Done': return <CheckCircle className="w-4 h-4 text-emerald-400" />;
+      case 'In Progress': return <Clock className="w-4 h-4 text-amber-400" />;
+      case 'Revisit': return <AlertCircle className="w-4 h-4 text-rose-400" />;
       default: return <div className="w-4 h-4 rounded-full border-2 border-dark-500" />;
     }
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-96">
+      <div className="flex flex-col items-center justify-center h-96 gap-3">
         <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
+        <p className="text-dark-400 text-sm">Question details load ho rahe hain...</p>
       </div>
     );
   }
 
   if (loadError) {
     return (
-      <div className="text-center py-20">
+      <div className="text-center py-20 bg-dark-800/30 rounded-2xl border border-dark-700/50 max-w-xl mx-auto my-12 p-8">
         <AlertCircle className="w-10 h-10 text-rose-400 mx-auto mb-3" />
-        <p className="text-rose-300">{loadError}</p>
-        <div className="flex gap-3 justify-center mt-4">
-          <button onClick={fetchQuestion} className="btn-primary">
+        <p className="text-rose-300 text-sm">{loadError}</p>
+        <div className="flex gap-3 justify-center mt-6">
+          <button onClick={fetchQuestion} className="btn-primary text-sm flex items-center gap-2">
             <RefreshCw className="w-4 h-4" /> Retry
           </button>
-          <button onClick={() => navigate(-1)} className="btn-ghost">
+          <button onClick={() => navigate(-1)} className="btn-ghost text-sm">
             Go Back
           </button>
         </div>
@@ -238,17 +220,19 @@ const QuestionPage = () => {
     return (
       <div className="text-center py-20">
         <p className="text-dark-400">Question not found</p>
-        <button onClick={() => navigate(-1)} className="btn-primary mt-4">
+        <button onClick={() => navigate(-1)} className="btn-primary mt-4 text-sm">
           Go Back
         </button>
       </div>
     );
   }
 
+  const badgeInfo = revisionBadge();
+
   return (
-    <div className="w-full space-y-6">
-      {/* Breadcrumb & Actions */}
-      <div className="flex items-center justify-between">
+    <div className="w-full space-y-6 pb-16">
+      {/* Action Top Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-dark-700/50 pb-4">
         <button
           onClick={() => navigate(-1)}
           className="flex items-center gap-2 text-dark-400 hover:text-white text-sm transition-colors"
@@ -258,48 +242,30 @@ const QuestionPage = () => {
         </button>
 
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowParser(true)}
-            className="btn-ghost text-sm"
-          >
-            <Sparkles className="w-4 h-4" />
-            Generate Content
+          <button onClick={() => setShowParser(true)} className="btn-ghost text-sm flex items-center gap-1.5">
+            <Sparkles className="w-4 h-4 text-primary-400" />
+            <span>AI Generate</span>
           </button>
-          <button
-            onClick={handleDownloadPDF}
-            className="btn-ghost text-sm"
-          >
-            <FileDown className="w-4 h-4" />
-            Download PDF
+
+          <button onClick={handleDownloadPDF} className="btn-ghost text-sm flex items-center gap-1.5">
+            <FileDown className="w-4 h-4 text-dark-300" />
+            <span>Download PDF</span>
           </button>
+
           {!isEditing ? (
-            <button
-              onClick={() => setIsEditing(true)}
-              className="btn-primary text-sm"
-            >
+            <button onClick={() => setIsEditing(true)} className="btn-primary text-sm flex items-center gap-1.5">
               <Edit3 className="w-4 h-4" />
-              Edit
+              <span>Edit</span>
             </button>
           ) : (
-            <div className="flex gap-2">
-              <button
-                onClick={() => setIsEditing(false)}
-                className="btn-ghost text-sm"
-              >
+            <div className="flex items-center gap-2">
+              <button onClick={() => setIsEditing(false)} className="btn-ghost text-sm flex items-center gap-1">
                 <X className="w-4 h-4" />
-                Cancel
+                <span>Cancel</span>
               </button>
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="btn-primary text-sm"
-              >
-                {saving ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Save className="w-4 h-4" />
-                )}
-                Save
+              <button onClick={handleSave} disabled={saving} className="btn-primary text-sm flex items-center gap-1.5">
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                <span>Save</span>
               </button>
             </div>
           )}
@@ -307,396 +273,399 @@ const QuestionPage = () => {
       </div>
 
       {saveError && (
-        <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-4 text-sm text-rose-300">
-          {saveError}
+        <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-4 text-sm text-rose-300 flex items-center gap-3">
+          <AlertCircle className="w-5 h-5 flex-shrink-0" />
+          <span>{saveError}</span>
         </div>
       )}
 
-      {/* Question Header */}
-      <div className="bg-dark-800/50 rounded-2xl p-6 border border-dark-700/50">
-        <div className="flex items-start justify-between mb-4">
-          <div>
-            <h1 className="text-2xl font-bold text-white mb-2">{question.title}</h1>
-            <div className="flex items-center gap-3 flex-wrap">
-              <span className={getDifficultyClass(question.difficulty)}>
-                {question.difficulty}
-              </span>
-              <span className="text-sm text-dark-400">{question.platform}</span>
-              {question.link && (
-                <a
-                  href={question.link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm text-primary-400 hover:text-primary-300 
-                           flex items-center gap-1 transition-colors"
-                >
-                  Open Problem
-                  <ArrowLeft className="w-3 h-3 rotate-180" />
-                </a>
-              )}
+      {/* Main Grid: Left Sidebar (Sticky Meta) + Right Content Area (Full Width) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        
+        {/* ==================== LEFT SIDEBAR (STICKY METADATA) ==================== */}
+        <div className="lg:col-span-4 space-y-6 lg:sticky lg:top-6">
+          <div className="bg-dark-800/60 rounded-2xl p-6 border border-dark-700/60 shadow-xl space-y-6 backdrop-blur-md">
+            
+            {/* Title & Difficulty */}
+            <div>
+              <h1 className="text-2xl font-bold text-white mb-3 leading-snug">{question.title}</h1>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={getDifficultyClass(question.difficulty)}>
+                  {question.difficulty}
+                </span>
+                <span className="text-xs font-medium text-dark-400 bg-dark-900/60 px-2.5 py-1 rounded-full border border-dark-700/40">
+                  {question.platform}
+                </span>
+                {question.link && (
+                  <a
+                    href={question.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-primary-400 hover:text-primary-300 flex items-center gap-1 transition-colors ml-auto"
+                  >
+                    <span>Problem Link</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
+              </div>
             </div>
-          </div>
 
-          {/* Status Selector */}
-          <div className="flex items-center gap-2">
-            {getStatusIcon(question.status)}
-            <select
-              value={question.status}
-              onChange={(e) => handleStatusChange(e.target.value)}
-              className="bg-dark-900 border border-dark-700 rounded-lg px-3 py-2 
-                       text-sm text-white focus:outline-none focus:border-primary-500"
-            >
-              <option value="Not Started">Not Started</option>
-              <option value="In Progress">In Progress</option>
-              <option value="Done">Done</option>
-              <option value="Revisit">Revisit</option>
-            </select>
+            <hr className="border-dark-700/50" />
+
+            {/* Status Dropdown */}
+            <div>
+              <span className="text-xs font-bold text-dark-400 uppercase tracking-wider block mb-2">
+                Status
+              </span>
+              <div className="flex items-center gap-2">
+                {getStatusIcon(question.status)}
+                <select
+                  value={question.status}
+                  onChange={(e) => handleStatusChange(e.target.value)}
+                  className="w-full bg-dark-900/80 border border-dark-700 rounded-xl px-3 py-2.5 
+                           text-sm font-medium text-white focus:outline-none focus:border-primary-500"
+                >
+                  <option value="Not Started">Not Started</option>
+                  <option value="In Progress">In Progress</option>
+                  <option value="Done">Done</option>
+                  <option value="Revisit">Revisit</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Spaced Repetition Progress */}
+            <div className="space-y-2">
+              <span className="text-xs font-bold text-dark-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Brain className="w-3.5 h-3.5 text-primary-400" /> Spaced Repetition
+              </span>
+
+              <p className={`text-xs ${badgeInfo.cls}`}>
+                {badgeInfo.text}
+              </p>
+
+              <div className="flex items-center gap-1.5 pt-1">
+                {[1, 2, 3, 4].map((step) => (
+                  <div
+                    key={step}
+                    className={`h-2 flex-1 rounded-full transition-all ${
+                      step <= badgeInfo.passCount
+                        ? 'bg-emerald-400 shadow-sm shadow-emerald-500/30'
+                        : 'bg-dark-700'
+                    }`}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Test Recall Prominent Button */}
+            {question.status === 'Done' && (
+              <div className="pt-2">
+                <button
+                  onClick={startRecall}
+                  className="w-full py-3 px-4 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 
+                           text-dark-950 font-bold text-sm rounded-xl shadow-lg shadow-amber-500/10 
+                           flex items-center justify-center gap-2 transition-all transform active:scale-95"
+                >
+                  <Brain className="w-4 h-4 fill-dark-950" />
+                  <span>Start Test Recall</span>
+                </button>
+              </div>
+            )}
+
           </div>
         </div>
 
-        {progress && (
-          <div className="flex items-center gap-2 text-sm">
-            <Brain className="w-4 h-4 text-dark-400" />
-            <span className={revisionBadge().cls}>{revisionBadge().text}</span>
-          </div>
-        )}
+        {/* ==================== RIGHT CONTENT AREA (FULL WIDTH & NO ACCORDION) ==================== */}
+        <div className="lg:col-span-8 space-y-8">
+          
+          {/* Section 1: Approach */}
+          <section className="bg-dark-800/40 rounded-2xl p-6 border border-dark-700/50 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-primary-500/20 text-primary-400 rounded-xl flex items-center justify-center text-sm font-bold border border-primary-500/20">
+                1
+              </div>
+              <h2 className="text-lg font-bold text-white">Approach & Intuition</h2>
+            </div>
+
+            {isEditing ? (
+              <textarea
+                value={editData.approach}
+                onChange={(e) => setEditData({ ...editData, approach: e.target.value })}
+                rows={8}
+                className="w-full p-4 bg-dark-900 border border-dark-700 rounded-xl 
+                         text-white text-sm focus:outline-none focus:border-primary-500 
+                         resize-none font-mono leading-relaxed"
+                placeholder="Write step-by-step approach..."
+              />
+            ) : (
+              <div>
+                {question.approach ? (
+                  <p className="text-sm text-dark-200 leading-relaxed whitespace-pre-wrap bg-dark-900/30 p-5 rounded-xl border border-dark-700/30">
+                    {question.approach}
+                  </p>
+                ) : (
+                  <div className="text-center py-6 bg-dark-900/20 rounded-xl border border-dashed border-dark-700/40">
+                    <BookOpen className="w-6 h-6 text-dark-500 mx-auto mb-2" />
+                    <p className="text-dark-400 text-sm">No approach written yet.</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+
+          {/* Section 2: Code Block (Authentic IDE Look) */}
+          <section className="bg-dark-800/40 rounded-2xl p-6 border border-dark-700/50 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-emerald-500/20 text-emerald-400 rounded-xl flex items-center justify-center text-sm font-bold border border-emerald-500/20">
+                  2
+                </div>
+                <h2 className="text-lg font-bold text-white">Code Solution</h2>
+              </div>
+            </div>
+
+            {isEditing ? (
+              <textarea
+                value={editData.code}
+                onChange={(e) => setEditData({ ...editData, code: e.target.value })}
+                rows={12}
+                className="w-full p-4 bg-dark-950 border border-dark-700 rounded-xl 
+                         text-emerald-300 text-sm focus:outline-none focus:border-emerald-500 
+                         resize-none font-mono leading-relaxed"
+                placeholder="Paste code solution..."
+              />
+            ) : (
+              <div>
+                {question.code ? (
+                  /* IDE Window Container */
+                  <div className="bg-[#0d1117] rounded-xl border border-[#30363d] overflow-hidden shadow-2xl">
+                    {/* IDE Top Bar */}
+                    <div className="flex items-center justify-between px-4 py-3 bg-[#161b22] border-b border-[#30363d]">
+                      <div className="flex items-center gap-2">
+                        <span className="w-3 h-3 rounded-full bg-rose-500/80 inline-block"></span>
+                        <span className="w-3 h-3 rounded-full bg-amber-500/80 inline-block"></span>
+                        <span className="w-3 h-3 rounded-full bg-emerald-500/80 inline-block"></span>
+                        <span className="ml-2 text-xs font-mono text-dark-400 flex items-center gap-1.5">
+                          <Terminal className="w-3.5 h-3.5 text-emerald-400" /> solution.cpp
+                        </span>
+                      </div>
+                      <button
+                        onClick={handleCopyCode}
+                        className="flex items-center gap-1.5 text-xs text-dark-400 hover:text-white transition-colors px-2.5 py-1 rounded-lg bg-dark-800/50 border border-dark-700/50"
+                      >
+                        {copiedCode ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            <span className="text-emerald-400 font-semibold">Copied!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>Copy Code</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* IDE Code Area */}
+                    <pre className="p-5 text-sm font-mono text-emerald-300/90 leading-relaxed overflow-x-auto">
+                      <code>{question.code}</code>
+                    </pre>
+                  </div>
+                ) : (
+                  <div className="text-center py-6 bg-dark-900/20 rounded-xl border border-dashed border-dark-700/40">
+                    <Code2 className="w-6 h-6 text-dark-500 mx-auto mb-2" />
+                    <p className="text-dark-400 text-sm">No code added yet.</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+
+          {/* Section 3: Complexity Analysis */}
+          <section className="bg-dark-800/40 rounded-2xl p-6 border border-dark-700/50 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-amber-500/20 text-amber-400 rounded-xl flex items-center justify-center text-sm font-bold border border-amber-500/20">
+                3
+              </div>
+              <h2 className="text-lg font-bold text-white">Complexity Analysis</h2>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="bg-dark-900/40 p-4 rounded-xl border border-dark-700/40 space-y-1">
+                <span className="text-xs font-bold text-dark-400 uppercase tracking-wider block">Time Complexity</span>
+                {isEditing ? (
+                  <input
+                    type="text"
+                    value={editData.complexity.time}
+                    onChange={(e) => setEditData({
+                      ...editData,
+                      complexity: { ...editData.complexity, time: e.target.value }
+                    })}
+                    className="w-full mt-1 bg-dark-950 border border-dark-700 rounded-lg px-3 py-1.5 text-sm text-white font-mono"
+                    placeholder="O(N)"
+                  />
+                ) : (
+                  <p className="text-lg font-mono font-bold text-amber-400">
+                    {question.complexity?.time || 'Not Specified'}
+                  </p>
+                )}
+              </div>
+
+              <div className="bg-dark-900/40 p-4 rounded-xl border border-dark-700/40 space-y-1">
+                <span className="text-xs font-bold text-dark-400 uppercase tracking-wider block">Space Complexity</span>
+                {isEditing ? (
+                  <input
+                    type="text"
+                    value={editData.complexity.space}
+                    onChange={(e) => setEditData({
+                      ...editData,
+                      complexity: { ...editData.complexity, space: e.target.value }
+                    })}
+                    className="w-full mt-1 bg-dark-950 border border-dark-700 rounded-lg px-3 py-1.5 text-sm text-white font-mono"
+                    placeholder="O(1)"
+                  />
+                ) : (
+                  <p className="text-lg font-mono font-bold text-emerald-400">
+                    {question.complexity?.space || 'Not Specified'}
+                  </p>
+                )}
+              </div>
+            </div>
+          </section>
+
+          {/* Section 4: My Notes & Edge Cases */}
+          <section className="bg-dark-800/40 rounded-2xl p-6 border border-dark-700/50 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-violet-500/20 text-violet-400 rounded-xl flex items-center justify-center text-sm font-bold border border-violet-500/20">
+                4
+              </div>
+              <h2 className="text-lg font-bold text-white">My Notes & Edge Cases</h2>
+            </div>
+
+            {isEditing ? (
+              <textarea
+                value={editData.notes}
+                onChange={(e) => setEditData({ ...editData, notes: e.target.value })}
+                rows={4}
+                className="w-full p-4 bg-dark-900 border border-dark-700 rounded-xl 
+                         text-white text-sm focus:outline-none focus:border-primary-500 resize-none"
+                placeholder="Personal notes, constraints, gotchas..."
+              />
+            ) : (
+              <div>
+                {question.notes ? (
+                  <p className="text-sm text-dark-200 leading-relaxed whitespace-pre-wrap bg-dark-900/30 p-4 rounded-xl border border-dark-700/30">
+                    {question.notes}
+                  </p>
+                ) : (
+                  <div className="text-center py-6 bg-dark-900/20 rounded-xl border border-dashed border-dark-700/40">
+                    <p className="text-dark-500 text-sm">No notes added.</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+
+        </div>
       </div>
 
-      {/* Test Recall */}
-      {question.status === 'Done' && (
-        <div className="bg-dark-800/50 rounded-2xl border border-dark-700/50 overflow-hidden">
-          {recallMode === null && (
-            <div className="p-6 flex items-center justify-between">
-              <div>
-                <h3 className="text-white font-semibold flex items-center gap-2">
-                  <Brain className="w-4 h-4 text-primary-400" /> Test Recall
-                </h3>
-                <p className="text-sm text-dark-400 mt-1">
-                  Approach/code dekhe bina, apne dimaag se yaad karke likho — phir check karo.
-                </p>
-              </div>
-              <button onClick={startRecall} className="btn-primary text-sm">
-                Start Recall
-              </button>
-            </div>
-          )}
-
-          {recallMode === 'testing' && (
-            <div className="p-6 space-y-4">
-              <p className="text-sm text-dark-300">Bina dekhe, approach/code apne words mein yaad karke likho:</p>
-              <textarea
-                value={scratch}
-                onChange={(e) => setScratch(e.target.value)}
-                rows={6}
-                placeholder="Jo bhi yaad hai — approach, logic, gotchas..."
-                className="w-full px-4 py-3 bg-dark-900 border border-dark-700 rounded-xl 
-                         text-white text-sm focus:outline-none focus:border-primary-500 
-                         resize-none font-mono"
-              />
-              <button onClick={() => setRecallMode('revealed')} className="btn-primary text-sm">
-                Reveal Answer
-              </button>
-            </div>
-          )}
-
-          {recallMode === 'revealed' && (
-            <div className="p-6 space-y-4">
-              <div>
-                <h4 className="text-sm font-medium text-dark-300 mb-2">Tumhara scratch:</h4>
-                <div className="bg-dark-900/50 rounded-xl p-4 border border-dark-700/30 text-sm text-dark-300 whitespace-pre-wrap">
-                  {scratch || '(khaali chhoda)'}
+      {/* ==================== TEST RECALL SLIDE-OVER DRAWER ==================== */}
+      {showRecallDrawer && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex justify-end transition-opacity">
+          <div className="w-full max-w-xl bg-dark-900 h-full border-l border-dark-700 p-6 space-y-6 overflow-y-auto shadow-2xl flex flex-col justify-between">
+            
+            <div className="space-y-6">
+              {/* Drawer Header */}
+              <div className="flex items-center justify-between border-b border-dark-700/50 pb-4">
+                <div className="flex items-center gap-2">
+                  <Brain className="w-5 h-5 text-amber-400" />
+                  <h3 className="text-lg font-bold text-white">Test Recall Mode</h3>
                 </div>
+                <button
+                  onClick={() => setShowRecallDrawer(false)}
+                  className="p-1 text-dark-400 hover:text-white rounded-lg transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
-              {(question.approaches && question.approaches.length > 0) ? (
-                question.approaches.map((a, i) => (
-                  <div key={i}>
-                    <h4 className="text-sm font-medium text-dark-300 mb-2">
-                      Asli Approach {i + 1}{a.title ? `: ${a.title}` : ''}
-                    </h4>
-                    <div className="bg-dark-900/50 rounded-xl p-4 border border-dark-700/30 text-sm text-dark-300 whitespace-pre-wrap">
-                      {a.explanation || '(khaali hai)'}
-                    </div>
-                    {a.code && (
-                      <pre className="code-block text-xs mt-2">{a.code}</pre>
-                    )}
-                  </div>
-                ))
-              ) : (
-                <div>
-                  <h4 className="text-sm font-medium text-dark-300 mb-2">Asli Approach:</h4>
-                  <div className="bg-dark-900/50 rounded-xl p-4 border border-dark-700/30 text-sm text-dark-300 whitespace-pre-wrap">
-                    (khaali hai)
-                  </div>
+
+              {/* Recall Workspace */}
+              {recallMode === 'testing' && (
+                <div className="space-y-4">
+                  <p className="text-sm text-dark-300">
+                    Approach aur code dekhe bina, jo bhi yaad hai dimaag se likho:
+                  </p>
+                  <textarea
+                    value={scratch}
+                    onChange={(e) => setScratch(e.target.value)}
+                    rows={10}
+                    placeholder="Approach, main logic, pseudo code, gotchas..."
+                    className="w-full p-4 bg-dark-950 border border-dark-700 rounded-xl 
+                             text-white text-sm focus:outline-none focus:border-amber-500 
+                             resize-none font-mono"
+                  />
+                  <button
+                    onClick={() => setRecallMode('revealed')}
+                    className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-dark-950 font-bold text-sm rounded-xl transition-colors"
+                  >
+                    Reveal Original Answer
+                  </button>
                 </div>
               )}
-              <div className="flex gap-3">
+
+              {/* Recall Comparison View */}
+              {recallMode === 'revealed' && (
+                <div className="space-y-4 text-sm">
+                  <div>
+                    <h4 className="text-xs font-bold text-dark-400 uppercase mb-2">Tumhara Scratchpad:</h4>
+                    <div className="bg-dark-950 p-4 rounded-xl border border-dark-700/50 text-dark-200 font-mono text-xs whitespace-pre-wrap max-h-40 overflow-y-auto">
+                      {scratch || '(khaali chhoda)'}
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 className="text-xs font-bold text-dark-400 uppercase mb-2">Original Approach:</h4>
+                    <div className="bg-dark-950 p-4 rounded-xl border border-dark-700/50 text-dark-200 text-xs whitespace-pre-wrap max-h-40 overflow-y-auto">
+                      {question.approach || '(khaali hai)'}
+                    </div>
+                  </div>
+
+                  {question.code && (
+                    <div>
+                      <h4 className="text-xs font-bold text-dark-400 uppercase mb-2">Original Code:</h4>
+                      <pre className="bg-dark-950 p-4 rounded-xl border border-dark-700/50 text-emerald-400 font-mono text-xs overflow-x-auto max-h-48">
+                        <code>{question.code}</code>
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Recall Actions Footer */}
+            {recallMode === 'revealed' && (
+              <div className="pt-4 border-t border-dark-700/50 flex gap-3">
                 <button
                   onClick={() => submitRecall(false)}
                   disabled={recallSaving}
-                  className="flex-1 py-3 bg-rose-600/20 hover:bg-rose-600/30 text-rose-400 
-                           rounded-lg font-medium transition-colors"
+                  className="flex-1 py-3 bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 font-bold rounded-xl transition-colors"
                 >
-                  😵 Bhool gaya
+                  😵 Bhool Gaya
                 </button>
                 <button
                   onClick={() => submitRecall(true)}
                   disabled={recallSaving}
-                  className="flex-1 py-3 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 
-                           rounded-lg font-medium transition-colors"
+                  className="flex-1 py-3 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 font-bold rounded-xl transition-colors"
                 >
-                  ✅ Yaad tha
+                  ✅ Yaad Tha
                 </button>
               </div>
-            </div>
-          )}
+            )}
+
+          </div>
         </div>
       )}
-
-      {/* Content Sections */}
-      <div className="space-y-6">
-        {/* Problem Statement */}
-        <section>
-          <button
-            type="button"
-            onClick={() => toggleSection('problemStatement')}
-            className="w-full text-lg font-semibold text-white mb-3 flex items-center gap-2 text-left"
-          >
-            <span className="w-8 h-8 bg-primary-500/20 rounded-lg flex items-center justify-center">
-              <span className="text-primary-400 text-sm font-bold">•</span>
-            </span>
-            Problem Statement
-            <span className="ml-auto text-dark-400">
-              {isOpen('problemStatement') ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-            </span>
-          </button>
-          {(isEditing || isOpen('problemStatement')) && (isEditing ? (
-            <textarea
-              value={editData.problemStatement}
-              onChange={(e) => setEditData({ ...editData, problemStatement: e.target.value })}
-              rows={5}
-              className="w-full px-4 py-3 bg-dark-900 border border-dark-700 rounded-xl 
-                       text-white text-sm focus:outline-none focus:border-primary-500 
-                       resize-none font-mono leading-relaxed"
-              placeholder="Restate the problem here..."
-            />
-          ) : (
-            <div className="bg-dark-800/30 rounded-xl p-6 border border-dark-700/30">
-              {question.problemStatement ? (
-                <p className="whitespace-pre-wrap text-sm text-dark-200 leading-relaxed">
-                  {question.problemStatement}
-                </p>
-              ) : (
-                <div className="text-center py-8">
-                  <p className="text-dark-500 text-sm">No problem statement written yet</p>
-                  <button
-                    onClick={() => setIsEditing(true)}
-                    className="text-primary-400 text-sm mt-2 hover:underline"
-                  >
-                    Start writing
-                  </button>
-                </div>
-              )}
-            </div>
-          ))}
-        </section>
-
-        {/* Approaches — a question can have several: brute force, better,
-            optimal, each fully self-contained with its own intuition,
-            explanation, code and complexity. */}
-        <section className="space-y-4">
-          <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-            <span className="w-8 h-8 bg-emerald-500/20 rounded-lg flex items-center justify-center">
-              <span className="text-emerald-400 text-sm font-bold">1</span>
-            </span>
-            Approaches
-          </h2>
-
-          {(isEditing ? editData.approaches : (question.approaches || [])).length === 0 && !isEditing && (
-            <div className="bg-dark-800/30 rounded-xl p-8 border border-dark-700/30 text-center">
-              <p className="text-dark-500 text-sm">No approaches written yet</p>
-              <button
-                onClick={() => setIsEditing(true)}
-                className="text-primary-400 text-sm mt-2 hover:underline"
-              >
-                Add an approach
-              </button>
-            </div>
-          )}
-
-          {(isEditing ? editData.approaches : (question.approaches || [])).map((a, i) => {
-            const key = `approach-${i}`;
-            return (
-              <div key={i} className="bg-dark-800/30 rounded-xl border border-dark-700/30 overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => toggleSection(key)}
-                  className="w-full flex items-center gap-2 px-6 py-4 text-left"
-                >
-                  <span className="font-semibold text-white">
-                    Approach {i + 1}{!isEditing && a.title ? `: ${a.title}` : ''}
-                  </span>
-                  {isEditing && (
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); removeApproach(i); }}
-                      className="ml-2 text-rose-400 hover:text-rose-300 text-xs"
-                    >
-                      Remove
-                    </button>
-                  )}
-                  <span className="ml-auto text-dark-400">
-                    {isOpen(key) ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-                  </span>
-                </button>
-
-                {(isEditing || isOpen(key)) && (
-                  <div className="px-6 pb-6 space-y-4">
-                    {isEditing ? (
-                      <>
-                        <input
-                          type="text"
-                          value={a.title}
-                          onChange={(e) => updateApproach(i, 'title', e.target.value)}
-                          placeholder="Title (e.g. Brute Force, Optimal)"
-                          className="w-full px-4 py-2 bg-dark-900 border border-dark-700 rounded-lg 
-                                   text-white text-sm focus:outline-none focus:border-primary-500"
-                        />
-                        <textarea
-                          value={a.intuition}
-                          onChange={(e) => updateApproach(i, 'intuition', e.target.value)}
-                          rows={2}
-                          placeholder="Intuition — the key insight in a sentence or two"
-                          className="w-full px-4 py-3 bg-dark-900 border border-dark-700 rounded-xl 
-                                   text-white text-sm focus:outline-none focus:border-primary-500 
-                                   resize-none"
-                        />
-                        <textarea
-                          value={a.explanation}
-                          onChange={(e) => updateApproach(i, 'explanation', e.target.value)}
-                          rows={6}
-                          placeholder="Step-by-step explanation"
-                          className="w-full px-4 py-3 bg-dark-900 border border-dark-700 rounded-xl 
-                                   text-white text-sm focus:outline-none focus:border-primary-500 
-                                   resize-none font-mono leading-relaxed"
-                        />
-                        <textarea
-                          value={a.code}
-                          onChange={(e) => updateApproach(i, 'code', e.target.value)}
-                          rows={10}
-                          placeholder="Code"
-                          className="w-full px-4 py-3 bg-dark-900 border border-dark-700 rounded-xl 
-                                   text-white text-sm focus:outline-none focus:border-primary-500 
-                                   resize-none font-mono leading-relaxed"
-                        />
-                        <div className="grid grid-cols-2 gap-4">
-                          <input
-                            type="text"
-                            value={a.timeComplexity}
-                            onChange={(e) => updateApproach(i, 'timeComplexity', e.target.value)}
-                            placeholder="Time — O(n)"
-                            className="w-full px-3 py-2 bg-dark-900 border border-dark-700 rounded-lg 
-                                     text-white text-sm font-mono focus:outline-none focus:border-primary-500"
-                          />
-                          <input
-                            type="text"
-                            value={a.spaceComplexity}
-                            onChange={(e) => updateApproach(i, 'spaceComplexity', e.target.value)}
-                            placeholder="Space — O(1)"
-                            className="w-full px-3 py-2 bg-dark-900 border border-dark-700 rounded-lg 
-                                     text-white text-sm font-mono focus:outline-none focus:border-primary-500"
-                          />
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        {a.intuition && (
-                          <p className="text-sm text-dark-300 italic whitespace-pre-wrap">{a.intuition}</p>
-                        )}
-                        {a.explanation && (
-                          <p className="whitespace-pre-wrap text-sm text-dark-200 leading-relaxed">
-                            {a.explanation}
-                          </p>
-                        )}
-                        {a.code && (
-                          <div className="bg-dark-900 rounded-xl border border-dark-700/50 overflow-hidden">
-                            <pre className="p-6 text-sm font-mono text-dark-200 leading-relaxed overflow-x-auto">
-                              <code>{a.code}</code>
-                            </pre>
-                          </div>
-                        )}
-                        {(a.timeComplexity || a.spaceComplexity) && (
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="bg-dark-900/50 rounded-xl p-4 border border-dark-700/30">
-                              <span className="text-sm text-dark-400">Time Complexity</span>
-                              <p className="text-lg font-mono text-white mt-1">{a.timeComplexity || 'Not set'}</p>
-                            </div>
-                            <div className="bg-dark-900/50 rounded-xl p-4 border border-dark-700/30">
-                              <span className="text-sm text-dark-400">Space Complexity</span>
-                              <p className="text-lg font-mono text-white mt-1">{a.spaceComplexity || 'Not set'}</p>
-                            </div>
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-
-          {isEditing && (
-            <button
-              type="button"
-              onClick={addApproach}
-              className="w-full py-3 border-2 border-dashed border-dark-700 rounded-xl 
-                       text-dark-400 hover:text-primary-400 hover:border-primary-500/50 
-                       text-sm font-medium transition-colors"
-            >
-              + Add Another Approach
-            </button>
-          )}
-        </section>
-
-        {/* Notes */}
-        <section>
-          <button
-            type="button"
-            onClick={() => toggleSection('notes')}
-            className="w-full text-lg font-semibold text-white mb-3 flex items-center gap-2 text-left"
-          >
-            <span className="w-8 h-8 bg-violet-500/20 rounded-lg flex items-center justify-center">
-              <span className="text-violet-400 text-sm font-bold">2</span>
-            </span>
-            My Notes
-            <span className="ml-auto text-dark-400">
-              {isOpen('notes') ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-            </span>
-          </button>
-          {(isEditing || isOpen('notes')) && (isEditing ? (
-            <textarea
-              value={editData.notes}
-              onChange={(e) => setEditData({ ...editData, notes: e.target.value })}
-              rows={4}
-              className="w-full px-4 py-3 bg-dark-900 border border-dark-700 rounded-xl 
-                       text-white text-sm focus:outline-none focus:border-primary-500 
-                       resize-none"
-              placeholder="Your personal notes, edge cases, tricks..."
-            />
-          ) : (
-            <div className="bg-dark-800/30 rounded-xl p-6 border border-dark-700/30">
-              {question.notes ? (
-                <p className="text-sm text-dark-300 whitespace-pre-wrap">
-                  {question.notes}
-                </p>
-              ) : (
-                <div className="text-center py-4">
-                  <p className="text-dark-500 text-sm">No notes yet</p>
-                </div>
-              )}
-            </div>
-          ))}
-        </section>
-      </div>
 
       {/* Parser Modal */}
       <ParserModal

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/ConfirmDialog';
-import { Plus, BookOpen, TrendingUp, Target, ArrowRight, CheckCircle, Clock, Brain, AlertCircle, RefreshCw } from 'lucide-react';
+import { Plus, BookOpen, TrendingUp, Target, ArrowRight, CheckCircle, Clock, Brain, AlertCircle, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
 import SubjectCard from '../components/SubjectCard';
 import AddSubjectModal from '../components/AddSubjectModal';
 import { getSubjects, createSubject, deleteSubject, getActivePlan, getDueToday } from '../utils/api';
@@ -46,6 +46,7 @@ const Dashboard = () => {
   const [dueToday, setDueToday] = useState([]);
   const [dueLoading, setDueLoading] = useState(true);
   const [dueError, setDueError] = useState('');
+  const [isDueTodayExpanded, setIsDueTodayExpanded] = useState(false);
 
   useEffect(() => {
     fetchSubjects();
@@ -299,7 +300,12 @@ const Dashboard = () => {
       <div className="bg-gradient-to-br from-rose-600/10 to-pink-800/5 
                     rounded-2xl border border-rose-500/20 overflow-hidden">
         <div className="p-6">
-          <div className="flex items-center justify-between mb-4">
+          <button
+            type="button"
+            onClick={() => setIsDueTodayExpanded((expanded) => !expanded)}
+            aria-expanded={isDueTodayExpanded}
+            className="w-full flex items-center justify-between text-left mb-4"
+          >
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-rose-500/20 rounded-xl flex items-center justify-center">
                 <Brain className="w-5 h-5 text-rose-400" />
@@ -309,13 +315,25 @@ const Dashboard = () => {
                 <p className="text-sm text-dark-400">Spaced-repetition revisions — Test Recall karna hai</p>
               </div>
             </div>
-          </div>
+            <div className="flex items-center gap-3">
+              {!dueLoading && !dueError && (
+                <span className="text-xs font-semibold px-2 py-1 rounded-full bg-rose-500/10 text-rose-300 border border-rose-500/20">
+                  {dueToday.length}
+                </span>
+              )}
+              {isDueTodayExpanded ? (
+                <ChevronUp className="w-5 h-5 text-dark-400" />
+              ) : (
+                <ChevronDown className="w-5 h-5 text-dark-400" />
+              )}
+            </div>
+          </button>
 
-          {dueLoading ? (
+          {isDueTodayExpanded && dueLoading ? (
             <div className="flex items-center justify-center py-8">
               <div className="w-6 h-6 border-2 border-rose-500/30 border-t-rose-500 rounded-full animate-spin" />
             </div>
-          ) : dueError ? (
+          ) : isDueTodayExpanded && dueError ? (
             <div className="text-center py-8">
               <AlertCircle className="w-6 h-6 text-rose-400 mx-auto mb-2" />
               <p className="text-rose-300 text-sm">{dueError}</p>
@@ -323,7 +341,7 @@ const Dashboard = () => {
                 <RefreshCw className="w-3 h-3" /> Retry
               </button>
             </div>
-          ) : dueToday.length > 0 ? (
+          ) : isDueTodayExpanded && dueToday.length > 0 ? (
             <div className="space-y-2">
               {dueToday.map((entry) => (
                 <div
@@ -342,11 +360,11 @@ const Dashboard = () => {
                 </div>
               ))}
             </div>
-          ) : (
+          ) : isDueTodayExpanded ? (
             <div className="text-center py-8">
               <p className="text-dark-400 text-sm">Aaj kuch bhi due nahi hai. Nice.</p>
             </div>
-          )}
+          ) : null}
         </div>
       </div>
 

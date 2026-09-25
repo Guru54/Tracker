@@ -99,66 +99,31 @@ export const generateQuestionPDF = async (question) => {
   doc.text(`Difficulty: ${question.difficulty} | Platform: ${question.platform}`, margin, y);
   y += 20;
 
-  // Problem Statement
-  if (question.problemStatement) {
+  // Approach
+  if (question.approach) {
     y = ensureSpace(doc, y, 16);
     doc.setFontSize(16);
     doc.setTextColor(30, 30, 30);
-    doc.text('Problem Statement', margin, y);
+    doc.text('Approach', margin, y);
     y += 10;
 
     doc.setFontSize(11);
     doc.setTextColor(60, 60, 60);
-    y = writeWrappedText(doc, question.problemStatement, margin, y, pageWidth - 2 * margin, 6);
+    y = writeWrappedText(doc, question.approach, margin, y, pageWidth - 2 * margin, 6);
     y += 15;
   }
 
-  // Approaches — one block per approach, each with its own intuition,
-  // explanation, code and complexity.
-  const approaches = question.approaches || [];
-  approaches.forEach((a, i) => {
+  // Code
+  if (question.code) {
     y = ensureSpace(doc, y, 16);
     doc.setFontSize(16);
     doc.setTextColor(30, 30, 30);
-    doc.text(`Approach ${i + 1}${a.title ? `: ${a.title}` : ''}`, margin, y);
+    doc.text('Code', margin, y);
     y += 10;
 
-    if (a.intuition) {
-      doc.setFontSize(11);
-      doc.setTextColor(90, 90, 90);
-      y = writeWrappedText(doc, a.intuition, margin, y, pageWidth - 2 * margin, 6);
-      y += 6;
-    }
-
-    if (a.explanation) {
-      doc.setFontSize(11);
-      doc.setTextColor(60, 60, 60);
-      y = writeWrappedText(doc, a.explanation, margin, y, pageWidth - 2 * margin, 6);
-      y += 10;
-    }
-
-    if (a.code) {
-      y = writeCodeBlock(doc, a.code, margin, y, pageWidth - 2 * margin);
-      y += 10;
-    }
-
-    if (a.timeComplexity || a.spaceComplexity) {
-      doc.setFontSize(11);
-      doc.setTextColor(60, 60, 60);
-      if (a.timeComplexity) {
-        y = ensureSpace(doc, y, 8);
-        doc.text(`Time: ${a.timeComplexity}`, margin, y);
-        y += 8;
-      }
-      if (a.spaceComplexity) {
-        y = ensureSpace(doc, y, 8);
-        doc.text(`Space: ${a.spaceComplexity}`, margin, y);
-        y += 8;
-      }
-    }
-
-    y += 8;
-  });
+    y = writeCodeBlock(doc, question.code, margin, y, pageWidth - 2 * margin);
+    y += 15;
+  }
 
   // Notes / Key Points
   if (question.notes) {
@@ -172,6 +137,28 @@ export const generateQuestionPDF = async (question) => {
     doc.setTextColor(60, 60, 60);
     y = writeWrappedText(doc, question.notes, margin, y, pageWidth - 2 * margin, 6);
     y += 15;
+  }
+
+  // Complexity
+  if (question.complexity?.time || question.complexity?.space) {
+    y = ensureSpace(doc, y, 16);
+    doc.setFontSize(16);
+    doc.setTextColor(30, 30, 30);
+    doc.text('Complexity', margin, y);
+    y += 10;
+
+    doc.setFontSize(11);
+    doc.setTextColor(60, 60, 60);
+    if (question.complexity.time) {
+      y = ensureSpace(doc, y, 8);
+      doc.text(`Time: ${question.complexity.time}`, margin, y);
+      y += 8;
+    }
+    if (question.complexity.space) {
+      y = ensureSpace(doc, y, 8);
+      doc.text(`Space: ${question.complexity.space}`, margin, y);
+      y += 8;
+    }
   }
 
   doc.save(`${question.title.replace(/\s+/g, '_')}.pdf`);
@@ -203,11 +190,10 @@ export const generateTopicPDF = async (topic, questions) => {
     doc.text(`${q.title} (${q.difficulty})`, margin, y);
     y += 10;
 
-    const firstApproachText = q.approaches?.[0]?.explanation || q.approaches?.[0]?.intuition || '';
-    if (firstApproachText) {
+    if (q.approach) {
       doc.setFontSize(10);
       doc.setTextColor(60, 60, 60);
-      const snippet = firstApproachText.length > 200 ? firstApproachText.substring(0, 200) + '...' : firstApproachText;
+      const snippet = q.approach.length > 200 ? q.approach.substring(0, 200) + '...' : q.approach;
       y = writeWrappedText(doc, snippet, margin, y, pageWidth - 2 * margin, 5);
       y += 10;
     }
@@ -254,11 +240,10 @@ export const generateSubjectPDF = async (subject, topics, allQuestions) => {
       doc.text(`\u2022 ${q.title} - ${q.difficulty}`, margin + 5, y);
       y += 8;
 
-      const firstApproachText = q.approaches?.[0]?.explanation || q.approaches?.[0]?.intuition || '';
-      if (firstApproachText) {
+      if (q.approach) {
         doc.setFontSize(9);
         doc.setTextColor(80, 80, 80);
-        const snippet = firstApproachText.length > 150 ? firstApproachText.substring(0, 150) + '...' : firstApproachText;
+        const snippet = q.approach.length > 150 ? q.approach.substring(0, 150) + '...' : q.approach;
         y = writeWrappedText(doc, snippet, margin + 10, y, pageWidth - 2 * margin - 10, 4);
         y += 5;
       }

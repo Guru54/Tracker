@@ -29,26 +29,17 @@ const QuestionSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
-  // Full problem text/summary, shown above the approaches.
-  problemStatement: {
+  approach: {
     type: String,
     default: ''
   },
-  // A question can have multiple solving approaches (brute force, better,
-  // optimal, etc.), each fully self-contained — its own intuition, prose
-  // explanation, code, and complexity. This replaces the old flat
-  // approach/code/complexity fields, which could only ever hold one
-  // approach and silently overwrote it if you tried to add a second.
-  approaches: {
-    type: [{
-      title: { type: String, default: '' },
-      intuition: { type: String, default: '' },
-      explanation: { type: String, default: '' },
-      code: { type: String, default: '' },
-      timeComplexity: { type: String, default: '' },
-      spaceComplexity: { type: String, default: '' }
-    }],
-    default: []
+  code: {
+    type: String,
+    default: ''
+  },
+  complexity: {
+    time: { type: String, default: '' },
+    space: { type: String, default: '' }
   },
   notes: {
     type: String,

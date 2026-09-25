@@ -169,49 +169,35 @@ const ParserModal = ({ isOpen, onClose, question, onSave }) => {
           {step === 'preview' && parsedData && (
             <div className="space-y-4">
               <div className="space-y-4 max-h-96 overflow-y-auto">
-                {/* Problem Statement Preview */}
+                {/* Approach Preview */}
                 <div>
-                  <h4 className="text-sm font-medium text-dark-300 mb-2">Problem Statement</h4>
+                  <h4 className="text-sm font-medium text-dark-300 mb-2">Approach</h4>
                   <div className="bg-dark-900 p-4 rounded-lg border border-dark-700/50">
                     <p className="text-sm text-dark-300 whitespace-pre-wrap">
-                      {parsedData.problemStatement || 'Not detected'}
+                      {parsedData.approach}
                     </p>
                   </div>
                 </div>
 
-                {/* Approaches Preview */}
-                {(parsedData.approaches || []).length === 0 ? (
-                  <p className="text-sm text-dark-500">No approaches detected in the response.</p>
-                ) : (
-                  parsedData.approaches.map((a, i) => (
-                    <div key={i} className="bg-dark-800/40 rounded-xl border border-dark-700/50 p-4 space-y-3">
-                      <h4 className="text-sm font-semibold text-primary-400">
-                        Approach {i + 1}{a.title ? `: ${a.title}` : ''}
-                      </h4>
-                      {a.intuition && (
-                        <p className="text-sm text-dark-300 italic whitespace-pre-wrap">{a.intuition}</p>
-                      )}
-                      {a.explanation && (
-                        <div className="bg-dark-900 p-3 rounded-lg border border-dark-700/50">
-                          <p className="text-sm text-dark-300 whitespace-pre-wrap">{a.explanation}</p>
-                        </div>
-                      )}
-                      {a.code && (
-                        <pre className="code-block text-xs">{a.code}</pre>
-                      )}
-                      <div className="flex gap-4">
-                        <div className="flex-1 bg-dark-900 p-3 rounded-lg border border-dark-700/50">
-                          <span className="text-xs text-dark-500">Time</span>
-                          <p className="text-sm text-white font-mono">{a.timeComplexity || 'Not detected'}</p>
-                        </div>
-                        <div className="flex-1 bg-dark-900 p-3 rounded-lg border border-dark-700/50">
-                          <span className="text-xs text-dark-500">Space</span>
-                          <p className="text-sm text-white font-mono">{a.spaceComplexity || 'Not detected'}</p>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                )}
+                {/* Code Preview */}
+                <div>
+                  <h4 className="text-sm font-medium text-dark-300 mb-2">Code</h4>
+                  <pre className="code-block text-xs">
+                    {parsedData.code}
+                  </pre>
+                </div>
+
+                {/* Complexity Preview */}
+                <div className="flex gap-4">
+                  <div className="flex-1 bg-dark-900 p-3 rounded-lg border border-dark-700/50">
+                    <span className="text-xs text-dark-500">Time</span>
+                    <p className="text-sm text-white font-mono">{parsedData.complexity.time || 'Not detected'}</p>
+                  </div>
+                  <div className="flex-1 bg-dark-900 p-3 rounded-lg border border-dark-700/50">
+                    <span className="text-xs text-dark-500">Space</span>
+                    <p className="text-sm text-white font-mono">{parsedData.complexity.space || 'Not detected'}</p>
+                  </div>
+                </div>
 
                 {/* Key Points / Notes Preview */}
                 <div>

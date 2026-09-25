@@ -189,29 +189,20 @@ Return ONLY a valid JSON array of objects — no markdown code fences, no LaTeX 
 ]`;
 };
 
-// Generate prompt for a single question's full content: problem statement +
-// every distinct solving approach (brute force through optimal), each fully
-// self-contained. Asks for strict JSON instead of Markdown headings —
-// JSON.parse() is a 100% reliable boundary between fields, unlike regex over
-// headings, and it lets us tell the AI to skip LaTeX delimiters ($, \ge,
-// etc.) that look bad as raw text.
+// Generate prompt for a single question's full content (approach/code/complexity/notes).
+// Asks for strict JSON instead of Markdown headings — JSON.parse() is a 100%
+// reliable boundary between fields, unlike regex over headings, and it lets us
+// tell the AI to skip LaTeX delimiters ($, \ge, etc.) that look bad as raw text.
 export const generateQuestionContentPrompt = (questionTitle) => {
-  return `Act as a DSA expert. Explain the DSA problem "${questionTitle}", covering every meaningfully distinct approach from brute force to optimal.
+  return `Act as a DSA expert. Explain the DSA problem "${questionTitle}".
 
 Return ONLY a valid JSON object — no markdown code fences, no LaTeX (no $, no \\ge, no \\le, no math syntax of any kind; write complexities and math as plain ASCII like O(n log n)), no text before or after the JSON — with exactly this schema:
 
 {
-  "problemStatement": "The problem, restated clearly, in plain prose",
-  "approaches": [
-    {
-      "title": "e.g. Brute Force / Better / Optimal",
-      "intuition": "The key insight in a sentence or two",
-      "explanation": "Step-by-step explanation of the approach, in plain prose",
-      "code": "Complete working C++ code as a plain string (use \\n for newlines)",
-      "timeComplexity": "O(...)",
-      "spaceComplexity": "O(...)"
-    }
-  ],
+  "approach": "Step-by-step explanation of the approach, in plain prose",
+  "code": "Complete working C++ code as a plain string (use \\n for newlines)",
+  "timeComplexity": "O(...)",
+  "spaceComplexity": "O(...)",
   "keyPoints": "Important observations, edge cases, or gotchas, in plain text"
 }`;
 };
@@ -223,55 +214,25 @@ const stripCodeFence = (text) => {
   return fenced ? fenced[1].trim() : text.trim();
 };
 
-// A blank approach entry, shape-matched to the Question model's approaches[].
-export const emptyApproach = () => ({
-  title: '', intuition: '', explanation: '', code: '', timeComplexity: '', spaceComplexity: ''
-});
-
 // Primary content parser: JSON.parse on the AI's response. Reliable by
 // construction — no regex guessing where one field ends and the next begins.
-// Accepts the current multi-approach schema; also recognizes the old flat
-// single-approach shape (approach/code/timeComplexity/spaceComplexity at the
-// top level) and lifts it into a one-item approaches[] so older prompts/
-// responses still parse into something usable. Falls back to the old
-// "## Heading" markdown parser if the AI ignores the JSON instruction
-// entirely, so a format drift degrades gracefully instead of losing the
-// response.
+// Falls back to the old "## Heading" markdown parser if the AI ignores the
+// JSON instruction, so a format drift degrades gracefully instead of losing
+// the response entirely.
 export const parseQuestionContentResponse = (text) => {
-  const empty = { problemStatement: '', approaches: [], notes: '' };
+  const empty = { approach: '', code: '', complexity: { time: '', space: '' }, notes: '' };
   if (!text || typeof text !== 'string') return empty;
 
   const candidate = stripCodeFence(text);
   try {
     const obj = JSON.parse(candidate);
-
-    let approaches;
-    if (Array.isArray(obj.approaches)) {
-      approaches = obj.approaches.map(a => ({
-        title: a?.title || '',
-        intuition: a?.intuition || '',
-        explanation: a?.explanation || a?.approach || '',
-        code: a?.code || '',
-        timeComplexity: a?.timeComplexity || a?.complexity?.time || '',
-        spaceComplexity: a?.spaceComplexity || a?.complexity?.space || ''
-      }));
-    } else if (obj.approach || obj.code) {
-      // Old flat single-approach shape — lift it into the array form.
-      approaches = [{
-        title: 'Approach 1',
-        intuition: '',
-        explanation: obj.approach || '',
-        code: obj.code || '',
-        timeComplexity: obj.timeComplexity || obj.complexity?.time || '',
-        spaceComplexity: obj.spaceComplexity || obj.complexity?.space || ''
-      }];
-    } else {
-      approaches = [];
-    }
-
     return {
-      problemStatement: obj.problemStatement || '',
-      approaches,
+      approach: obj.approach || '',
+      code: obj.code || '',
+      complexity: {
+        time: obj.timeComplexity || obj.complexity?.time || '',
+        space: obj.spaceComplexity || obj.complexity?.space || ''
+      },
       notes: obj.keyPoints || obj.notes || ''
     };
   } catch {
@@ -283,8 +244,7 @@ export const parseQuestionContentResponse = (text) => {
 
 // Legacy fallback: splits on "## <Heading>" lines, in case the AI response
 // wasn't valid JSON. Works on the old heading set (Approach/Code/Complexity/
-// Key Points) and degrades gracefully — missing sections just come back
-// empty, wrapped as a single approach so the shape still matches approaches[].
+// Key Points) and degrades gracefully — missing sections just come back empty.
 const parseQuestionContentFromMarkdown = (text) => {
   const sections = {};
   const headingRe = /^#{1,3}\s*(Approach|Code(?:\s*\([^)]*\))?|Complexity|Key Points?)\s*$/gim;
@@ -297,7 +257,7 @@ const parseQuestionContentFromMarkdown = (text) => {
     sections[name] = text.slice(start, end).trim();
   }
 
-  const explanation = sections['approach'] || '';
+  const approach = sections['approach'] || '';
 
   let code = '';
   if (sections['code']) {
@@ -314,13 +274,11 @@ const parseQuestionContentFromMarkdown = (text) => {
   }
 
   const notes = sections['key point'] || sections['key points'] || '';
-  const hasAnything = explanation || code || time || space;
 
   return {
-    problemStatement: '',
-    approaches: hasAnything
-      ? [{ title: 'Approach 1', intuition: '', explanation, code, timeComplexity: time, spaceComplexity: space }]
-      : [],
+    approach,
+    code,
+    complexity: { time, space },
     notes
   };
 };

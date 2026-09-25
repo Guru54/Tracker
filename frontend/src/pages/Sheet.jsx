@@ -23,6 +23,9 @@ const Sheet = () => {
   const [topics, setTopics] = useState([]);
   const [questionsMap, setQuestionsMap] = useState({});
   const [openAccordion, setOpenAccordion] = useState(null);
+  // FIX #4: tracks explicit user clicks on an accordion header so that an
+  // active search doesn't silently override the user's manual open/close choice.
+  const [manuallyToggled, setManuallyToggled] = useState({});
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [showAddTopic, setShowAddTopic] = useState(false);
@@ -34,12 +37,21 @@ const Sheet = () => {
   const [aiTargetTopic, setAiTargetTopic] = useState(null);
 
   // Filter states
-  const [activeFilter, setActiveFilter] = useState('all'); // all | pending | easy | medium | hard | leetcode
+  const [activeFilter, setActiveFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subjectId]);
+
+  // Reset manual-toggle overrides once search is cleared, so accordion
+  // behavior goes back to the default open/closed state.
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setManuallyToggled({});
+    }
+  }, [searchQuery]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -52,16 +64,20 @@ const Sheet = () => {
       setSubject(subjectData);
       setTopics(topicsData);
 
-      // Fetch every topic's questions in parallel instead of one-at-a-time.
       const results = await Promise.all(
         topicsData.map(topic => getQuestionsByTopic(topic._id).then(r => [topic._id, r.data]))
       );
       setQuestionsMap(Object.fromEntries(results));
 
-      if (topicsData.length > 0) setOpenAccordion(topicsData[0]._id);
+      // Keep the current topic open after a refresh, but leave all topics
+      // collapsed on the initial load.
+      setOpenAccordion(prev => {
+        if (prev && topicsData.some(t => t._id === prev)) return prev;
+        return null;
+      });
     } catch (err) {
       console.error('Error loading subject sheet:', err);
-      setLoadError('Subject data load nahi ho paya. Backend/DB connection check karke retry karo.');
+      setLoadError('Subject data load nahi ho paya. Connection check karke retry karo.');
     } finally {
       setLoading(false);
     }
@@ -81,16 +97,13 @@ const Sheet = () => {
       } catch (e) {
         console.error('Error deleting question:', e);
         toast.error('Question delete nahi ho paya — connection check karo.');
-        setQuestionsMap(prev => ({ ...prev, [updatedQuestion.topicId]: prevList })); // revert
+        setQuestionsMap(prev => ({ ...prev, [updatedQuestion.topicId]: prevList }));
       }
     } else {
-      // Check if new question
       const topicQs = questionsMap[updatedQuestion.topicId] || [];
       const exists = topicQs.find(q => q._id === updatedQuestion._id);
 
       if (!exists) {
-        // New question - must go to the DB first, since a locally-faked _id
-        // would never resolve to a real record on refresh.
         try {
           const { data } = await createQuestion({
             topicId: updatedQuestion.topicId,
@@ -110,7 +123,6 @@ const Sheet = () => {
           toast.error('Question add nahi ho paya — connection check karke dobara try karo.');
         }
       } else {
-        // Update existing — optimistic UI update, reverted if the save fails.
         const prevList = topicQs;
         setQuestionsMap(prev => ({
           ...prev,
@@ -119,11 +131,18 @@ const Sheet = () => {
           )
         }));
         try {
-          await updateQuestion(updatedQuestion._id, { status: updatedQuestion.status });
+          // FIX #1 (backend side): also persist previousStatus so a refresh
+          // doesn't lose the "what it was before Done" info the checkbox toggle relies on.
+          await updateQuestion(updatedQuestion._id, {
+            status: updatedQuestion.status,
+            ...(updatedQuestion.previousStatus !== undefined && {
+              previousStatus: updatedQuestion.previousStatus
+            })
+          });
         } catch (e) {
           console.error('Error updating question:', e);
           toast.error('Status update save nahi hua — connection check karo.');
-          setQuestionsMap(prev => ({ ...prev, [updatedQuestion.topicId]: prevList })); // revert
+          setQuestionsMap(prev => ({ ...prev, [updatedQuestion.topicId]: prevList }));
         }
       }
     }
@@ -150,7 +169,6 @@ const Sheet = () => {
     }
   };
 
-  // AI Generate handlers
   const handleOpenAIGenerateTopics = () => {
     setAiGenerateType('topics');
     setAiTargetTopic(null);
@@ -174,7 +192,7 @@ const Sheet = () => {
           failCount++;
         }
       }
-      if (failCount > 0) toast.error(`${failCount}/${data.length} topics save nahi ho paye — connection check karo.`);
+      if (failCount > 0) toast.error(`${failCount}/${data.length} topics save nahi ho paye.`);
       fetchData();
     } else {
       const questionsToAdd = data.map(q => ({
@@ -191,7 +209,7 @@ const Sheet = () => {
         await bulkCreateQuestions({ questions: questionsToAdd });
       } catch (e) {
         console.error('Error bulk-creating questions:', e);
-        toast.error('Questions save nahi ho paye — connection check karke dobara try karo.');
+        toast.error('Questions save nahi ho paye.');
       }
       fetchData();
     }
@@ -206,7 +224,6 @@ const Sheet = () => {
     await generateSubjectPDF(subject, topics, allQuestions);
   };
 
-  // Filter logic
   const getFilteredQuestions = (questions) => {
     if (!questions) return [];
     let result = questions;
@@ -237,17 +254,17 @@ const Sheet = () => {
   };
 
   const hasActiveFilter = activeFilter !== 'all' || searchQuery.trim().length > 0;
-
   const allQuestions = Object.values(questionsMap).flat();
   const totalSolved = allQuestions.filter(q => q.status === 'Done').length;
+  const percentage = allQuestions.length > 0 ? Math.round((totalSolved / allQuestions.length) * 100) : 0;
 
   const filterButtons = [
-    { key: 'all', label: 'All', icon: null },
+    { key: 'all', label: 'All' },
     { key: 'pending', label: 'Pending', icon: Clock },
-    { key: 'easy', label: 'Easy', icon: CheckCircle },
-    { key: 'medium', label: 'Medium', icon: null },
+    { key: 'easy', label: 'Easy' },
+    { key: 'medium', label: 'Medium' },
     { key: 'hard', label: 'Hard', icon: AlertCircle },
-    { key: 'leetcode', label: 'LeetCode', icon: null },
+    { key: 'leetcode', label: 'LeetCode' },
   ];
 
   if (loading) {
@@ -276,121 +293,126 @@ const Sheet = () => {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Sticky Header with Progress */}
-      <div className="sticky top-16 z-40 -mx-4 px-4 py-4 bg-dark-900/95 backdrop-blur-md 
-                    border-b border-dark-700/50">
-        <div className="w-full">
-          {/* Breadcrumb */}
-          <button
-            onClick={() => navigate('/')}
-            className="flex items-center gap-2 text-dark-400 hover:text-white text-sm mb-3 transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Back to Vault
-          </button>
-
-          {/* Title Row */}
-          <div className="flex items-start justify-between mb-3">
-            <div>
-              <div className="flex items-center gap-3">
-                <h1 className="text-2xl font-bold text-white">{subject?.name}</h1>
-                <button
-                  onClick={handleDownloadSubjectPDF}
-                  className="btn-ghost text-xs py-1.5 px-2.5"
-                >
-                  <FileDown className="w-3.5 h-3.5" />
-                  Master PDF
-                </button>
-              </div>
-              {subject?.description && (
-                <p className="text-sm text-dark-400 mt-1">{subject.description}</p>
-              )}
-            </div>
-
-            {/* AI Generate Topics Button */}
+    <div className="space-y-6 pb-12">
+      
+      {/* Sleek Compact Sticky Header */}
+      <div className="sticky top-0 z-30 bg-dark-900/95 backdrop-blur-xl border-b border-dark-700/60 pb-4 pt-2 -mt-2">
+        
+        {/* Top Breadcrumb & Title Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <div>
             <button
-              onClick={handleOpenAIGenerateTopics}
-              className="btn-primary text-sm"
+              onClick={() => navigate('/')}
+              className="flex items-center gap-1.5 text-dark-400 hover:text-white text-xs mb-1 transition-colors"
             >
-              <Sparkles className="w-4 h-4" />
-              Generate Topics with AI
+              <ArrowLeft className="w-3.5 h-3.5" />
+              Back to Vault
             </button>
+
+            <div className="flex items-center gap-3">
+              <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">{subject?.name}</h1>
+              <button
+                onClick={handleDownloadSubjectPDF}
+                className="btn-ghost text-xs py-1 px-2.5 flex items-center gap-1"
+              >
+                <FileDown className="w-3.5 h-3.5 text-dark-300" />
+                <span>Master PDF</span>
+              </button>
+            </div>
           </div>
 
-          {/* Progress Bar */}
-          <div className="bg-dark-800/50 rounded-xl p-4 border border-dark-700/50">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-dark-400">
-                {totalSolved} / {allQuestions.length} solved across {topics.length} topics
-              </span>
-              <span className="text-lg font-bold text-primary-400">
-                {allQuestions.length > 0 ? Math.round((totalSolved / allQuestions.length) * 100) : 0}%
-              </span>
-            </div>
-            <ProgressBar current={totalSolved} total={allQuestions.length} size="md" showText={false} />
+          <button
+            onClick={handleOpenAIGenerateTopics}
+            className="btn-primary text-xs sm:text-sm py-2 px-3 flex items-center gap-1.5"
+          >
+            <Sparkles className="w-4 h-4 text-primary-300" />
+            <span>Generate Topics with AI</span>
+          </button>
+        </div>
+
+        {/* FIX #5: now actually rendering ProgressBar instead of a duplicate
+            hand-rolled progress div + a dead unused import. */}
+        <div className="bg-dark-800/80 rounded-xl p-3 border border-dark-700/50">
+          <ProgressBar current={totalSolved} total={allQuestions.length} size="lg" />
+          <div className="text-xs text-dark-400 mt-1">
+            across {topics.length} topics
           </div>
         </div>
       </div>
 
-      {/* Search */}
-      <div className="relative">
-        <Search className="w-4 h-4 text-dark-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Question title se search karo..."
-          className="w-full pl-10 pr-9 py-2.5 bg-dark-800 border border-dark-700 rounded-lg 
-                   text-white text-sm placeholder-dark-500 focus:outline-none focus:border-primary-500"
-        />
-        {searchQuery && (
-          <button
-            onClick={() => setSearchQuery('')}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-dark-500 hover:text-white"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        )}
-      </div>
-
-      {/* Filter Buttons */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <Filter className="w-4 h-4 text-dark-500 mr-1" />
-        {filterButtons.map(({ key, label, icon: Icon }) => (
-          <button
-            key={key}
-            onClick={() => setActiveFilter(key)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-              activeFilter === key
-                ? 'bg-primary-600 text-white'
-                : 'bg-dark-800 text-dark-400 hover:text-white hover:bg-dark-700'
-            }`}
-          >
-            {Icon && <Icon className="w-3.5 h-3.5 inline mr-1.5" />}
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {/* Topics Accordion */}
+      {/* Controls Bar: Search & Filter Chips */}
       <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-white">Topics</h2>
+        <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
+          
+          {/* Search Box */}
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 text-dark-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search question title..."
+              className="w-full pl-10 pr-9 py-2 bg-dark-800/80 border border-dark-700/70 rounded-xl 
+                       text-white text-xs sm:text-sm placeholder-dark-500 focus:outline-none focus:border-primary-500 transition-all"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-dark-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+
+          {/* Filter Chips */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+            {filterButtons.map(({ key, label, icon: Icon }) => (
+              <button
+                key={key}
+                onClick={() => setActiveFilter(key)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                  activeFilter === key
+                    ? 'bg-primary-600 text-white shadow-md shadow-primary-600/20'
+                    : 'bg-dark-800/80 text-dark-400 hover:text-white hover:bg-dark-700/80 border border-dark-700/50'
+                }`}
+              >
+                {Icon && <Icon className="w-3 h-3" />}
+                {label}
+              </button>
+            ))}
+          </div>
+
+        </div>
+      </div>
+
+      {/* Topics Accordion Section */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between pt-2">
+          <h2 className="text-base font-bold text-white flex items-center gap-2">
+            <span>Topics & Questions</span>
+            <span className="text-xs font-normal text-dark-400">({topics.length})</span>
+          </h2>
           <button
             onClick={() => setShowAddTopic(true)}
-            className="btn-ghost text-sm"
+            className="btn-ghost text-xs py-1.5 px-3 flex items-center gap-1"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-3.5 h-3.5" />
             Add Topic
           </button>
         </div>
 
         {topics.map((topic) => {
           const filtered = getFilteredQuestions(questionsMap[topic._id] || []);
-          const isOpen = searchQuery.trim()
-            ? filtered.length > 0
-            : openAccordion === topic._id;
+
+          // FIX #4: search only *suggests* an open/closed state as a default.
+          // If the user has explicitly clicked this topic's header, that
+          // choice wins regardless of search results.
+          const searchSuggestsOpen = searchQuery.trim() ? filtered.length > 0 : null;
+          const isOpen = manuallyToggled[topic._id] !== undefined
+            ? manuallyToggled[topic._id]
+            : (searchSuggestsOpen !== null ? searchSuggestsOpen : openAccordion === topic._id);
+
           return (
             <Accordion
               key={topic._id}
@@ -398,9 +420,10 @@ const Sheet = () => {
               questions={filtered}
               allQuestions={questionsMap[topic._id] || []}
               isOpen={isOpen}
-              onToggle={() => setOpenAccordion(
-                openAccordion === topic._id ? null : topic._id
-              )}
+              onToggle={() => {
+                setManuallyToggled(prev => ({ ...prev, [topic._id]: !isOpen }));
+                setOpenAccordion(!isOpen ? topic._id : null);
+              }}
               onQuestionUpdate={handleQuestionUpdate}
               onGenerateQuestions={() => handleOpenAIGenerateQuestions(topic)}
               onDownloadTopicPDF={handleDownloadTopicPDF}
@@ -411,28 +434,28 @@ const Sheet = () => {
 
         {/* Add Topic Form */}
         {showAddTopic && (
-          <form onSubmit={handleAddTopic} className="bg-dark-800/50 rounded-xl p-4 border border-dark-700/50">
+          <form onSubmit={handleAddTopic} className="bg-dark-800/80 rounded-xl p-4 border border-dark-700/60 shadow-lg">
             <div className="flex gap-3">
               <input
                 type="text"
                 value={newTopicName}
                 onChange={(e) => setNewTopicName(e.target.value)}
-                placeholder="Topic name..."
-                className="flex-1 px-4 py-2.5 bg-dark-900 border border-dark-700 rounded-lg 
-                         text-white placeholder-dark-500 focus:outline-none focus:border-primary-500"
+                placeholder="Topic name (e.g., Dynamic Programming)..."
+                className="flex-1 px-4 py-2 bg-dark-900 border border-dark-700 rounded-lg 
+                         text-white text-sm placeholder-dark-500 focus:outline-none focus:border-primary-500"
                 autoFocus
               />
               <button
                 type="submit"
-                className="px-4 py-2.5 bg-primary-600 hover:bg-primary-500 text-white 
-                         rounded-lg font-medium transition-colors"
+                className="px-4 py-2 bg-primary-600 hover:bg-primary-500 text-white 
+                         rounded-lg text-sm font-semibold transition-colors"
               >
                 Add
               </button>
               <button
                 type="button"
                 onClick={() => setShowAddTopic(false)}
-                className="px-4 py-2.5 text-dark-400 hover:text-white transition-colors"
+                className="px-4 py-2 text-dark-400 hover:text-white text-sm transition-colors"
               >
                 Cancel
               </button>
