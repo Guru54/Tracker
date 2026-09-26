@@ -106,25 +106,71 @@ const levels = [
   }
 ];
 
-async function seed() {
-  await mongoose.connect(process.env.MONGO_URI, { serverSelectionTimeoutMS: 10000 });
+const graphLevels = [
+  {
+    name: 'Level 0 - Graph Fundamentals',
+    description: 'Introducing nodes, edges, adjacency, traversal, and graph representation.',
+    questions: [
+      ['Graph Basics: Vertices, Edges, and Degree', 'Easy', 'Concept', ''],
+      ['Adjacency Matrix vs Adjacency List', 'Easy', 'Concept', ''],
+      ['Undirected vs Directed Graph', 'Easy', 'Concept', ''],
+      ['Connected Components in an Undirected Graph', 'Easy', 'GFG', gfg('connected components in undirected graph')],
+      ['Graph Traversal: DFS Basics', 'Easy', 'Concept', ''],
+      ['Graph Traversal: BFS Basics', 'Easy', 'Concept', ''],
+      ['Cycle Detection in Undirected Graph', 'Medium', 'LeetCode', lc('find-eventual-safe-states')],
+      ['Number of Islands', 'Medium', 'LeetCode', lc('number-of-islands')]
+    ]
+  },
+  {
+    name: 'Level 1 - Shortest Paths and Reachability',
+    description: 'Breadth-first and multi-source graph traversal for shortest path and connectivity problems.',
+    questions: [
+      ['Flood Fill', 'Easy', 'LeetCode', lc('flood-fill')],
+      ['Rotting Oranges', 'Medium', 'LeetCode', lc('rotting-oranges')],
+      ['01 Matrix', 'Medium', 'LeetCode', lc('01-matrix')],
+      ['Shortest Path in Unweighted Graph', 'Medium', 'GFG', gfg('shortest path in unweighted graph')],
+      ['Knight Moves in Chessboard', 'Medium', 'GFG', gfg('knight moves chessboard')],
+      ['Word Ladder', 'Medium', 'LeetCode', lc('word-ladder')],
+      ['Employee Importance', 'Easy', 'LeetCode', lc('employee-importance')]
+    ]
+  },
+  {
+    name: 'Level 2 - Topological Sort and DAG Problems',
+    description: 'Directed acyclic graphs, ordering, and dependency-driven traversal.',
+    questions: [
+      ['Course Schedule', 'Medium', 'LeetCode', lc('course-schedule')],
+      ['Course Schedule II', 'Medium', 'LeetCode', lc('course-schedule-ii')],
+      ['Alien Dictionary', 'Hard', 'LeetCode', lc('alien-dictionary')],
+      ['Graph Valid Tree', 'Medium', 'LeetCode', lc('graph-valid-tree')],
+      ['Find the Town Judge', 'Easy', 'LeetCode', lc('find-the-town-judge')]
+    ]
+  },
+  {
+    name: 'Level 3 - Advanced Graph Algorithms',
+    description: 'Minimum spanning tree, connectivity optimization, and shortest path variants.',
+    questions: [
+      ['Number of Connected Components in an Undirected Graph', 'Medium', 'LeetCode', lc('number-of-provinces')],
+      ['Min Cost to Connect All Points', 'Medium', 'LeetCode', lc('min-cost-to-connect-all-points')],
+      ['Network Delay Time', 'Medium', 'LeetCode', lc('network-delay-time')],
+      ['Bellman-Ford Concept', 'Medium', 'Concept', ''],
+      ['Dijkstra Algorithm Basics', 'Medium', 'Concept', ''],
+      ['Union-Find and Cycle Detection', 'Medium', 'Concept', '']
+    ]
+  }
+];
 
-  const subjectName = 'Arrays - Zero to Advanced';
+async function seedSubject(subjectName, description, curriculum) {
   let subject = await Subject.findOne({ name: subjectName });
   if (subject) {
-    console.log(`Subject already exists: ${subject._id}`);
-    await mongoose.disconnect();
-    return;
+    console.log(`Subject already exists: ${subjectName} (${subject._id})`);
+    return subject;
   }
 
-  subject = await Subject.create({
-    name: subjectName,
-    description: 'A complete English-language array curriculum from absolute basics to advanced interview patterns, including LeetCode and GFG practice links.'
-  });
+  subject = await Subject.create({ name: subjectName, description });
 
   let questionCount = 0;
-  for (let levelIndex = 0; levelIndex < levels.length; levelIndex++) {
-    const level = levels[levelIndex];
+  for (let levelIndex = 0; levelIndex < curriculum.length; levelIndex++) {
+    const level = curriculum[levelIndex];
     const topic = await Topic.create({
       subjectId: subject._id,
       name: level.name,
@@ -145,7 +191,25 @@ async function seed() {
   }
 
   await Subject.updateOne({ _id: subject._id }, { totalQuestions: questionCount });
-  console.log(`Created ${subjectName}: ${levels.length} levels, ${questionCount} questions.`);
+  console.log(`Created ${subjectName}: ${curriculum.length} levels, ${questionCount} questions.`);
+  return subject;
+}
+
+async function seed() {
+  await mongoose.connect(process.env.MONGO_URI, { serverSelectionTimeoutMS: 10000 });
+
+  await seedSubject(
+    'Arrays - Zero to Advanced',
+    'A complete English-language array curriculum from absolute basics to advanced interview patterns, including LeetCode and GFG practice links.',
+    levels
+  );
+
+  await seedSubject(
+    'Graphs - Zero to Advanced',
+    'A graph-focused curriculum covering traversal, shortest path, DAG ordering, and foundational advanced graph techniques.',
+    graphLevels
+  );
+
   await mongoose.disconnect();
 }
 

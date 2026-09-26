@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/ConfirmDialog';
-import { Plus, BookOpen, TrendingUp, Target, ArrowRight, CheckCircle, Clock, Brain, AlertCircle, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, BookOpen, TrendingUp, Target, ArrowRight, CheckCircle, Clock, Brain, AlertCircle, RefreshCw, ChevronDown, ChevronUp, Github, Linkedin, Twitter, Heart } from 'lucide-react';
 import SubjectCard from '../components/SubjectCard';
 import AddSubjectModal from '../components/AddSubjectModal';
 import { getSubjects, createSubject, deleteSubject, getActivePlan, getDueToday } from '../utils/api';
@@ -368,6 +368,8 @@ const Dashboard = () => {
         </div>
       </div>
 
+   
+
       {/* Section Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -437,7 +439,57 @@ const Dashboard = () => {
         onClose={() => setShowModal(false)} 
         onAdd={handleAddSubject}
       />
+         {/* About Section */}
+      <div className="max-w-5xl mx-auto" style={{ fontFamily: 'Segoe UI, Inter, Arial, sans-serif' }}>
+        <div className="bg-gradient-to-br from-primary-600/10 via-dark-900 to-violet-600/10 rounded-[24px] border border-primary-500/20 overflow-hidden shadow-[0_0_0_1px_rgba(148,163,184,0.08)]">
+          <div className="px-5 py-6 md:px-8 md:py-7">
+            <div className="flex flex-col items-center text-center">
+              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-sky-400 via-blue-500 to-violet-500 flex items-center justify-center shadow-[0_18px_28px_rgba(59,130,246,0.28)] mb-4">
+                <span className="text-3xl">👨‍💻</span>
+              </div>
+
+              <h2 className="text-2xl md:text-3xl font-semibold tracking-[-0.04em] text-white">Gurudas Bhardwaj</h2>
+              <p className="mt-2 text-base md:text-lg text-primary-300 font-medium tracking-[0.02em]">Computer Science Student</p>
+
+              <p className="mt-4 max-w-3xl text-sm md:text-base text-dark-300 leading-relaxed font-light">
+                Passionate about creating educational tools that make complex concepts easier to understand.
+              </p>
+
+              <div className="mt-5 flex items-center justify-center gap-3">
+                {[
+                  { href: 'https://github.com/Guru54', label: 'GitHub', icon: Github },
+                  { href: 'https://www.linkedin.com/', label: 'LinkedIn', icon: Linkedin },
+                  { href: 'https://x.com/', label: 'Twitter', icon: Twitter }
+                ].map(({ href, label, icon: Icon }) => (
+                  <a
+                    key={label}
+                    href={href}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label={label}
+                    className="w-10 h-10 rounded-full bg-dark-800/70 border border-dark-600/60 flex items-center justify-center text-dark-200 hover:text-white hover:border-primary-500/50 hover:bg-primary-500/10 transition-all duration-200"
+                  >
+                    <Icon className="w-4 h-4" />
+                  </a>
+                ))}
+              </div>
+
+              <div className="mt-6 w-full border-t border-dark-700/60 pt-4">
+                <p className="text-sm md:text-base italic text-dark-300 font-light">"Learning algorithms should be visual and intuitive."</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-center gap-2 text-xs md:text-sm text-dark-400 mt-2 mb-4">
+          <Heart className="w-3.5 h-3.5 text-pink-400 fill-pink-400" />
+          <span>Built with love by Gurudas Bhardwaj</span>
+          <span>•</span>
+          <span>All rights reserved © 2025</span>
+        </div>
+      </div>
     </div>
+    
   );
 };
 
